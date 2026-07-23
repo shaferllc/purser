@@ -11,6 +11,9 @@ cd "$(dirname "$0")"
 DIST=0
 [ "${1:-}" = "--dist" ] && DIST=1
 SHORT_VERSION="${VERSION:-$(tr -d '[:space:]' < VERSION 2>/dev/null || echo 0.1.0)}"
+# CFBundleVersion has to be monotonic; BUILD=n pins it in the release workflow,
+# otherwise the version's own digits stand in.
+BUILD_VERSION="${BUILD:-$(echo "$SHORT_VERSION" | tr -cd '0-9')}"
 
 if [ "$DIST" = "1" ]; then
   # Anything people download has to run on both architectures — an arm64-only
