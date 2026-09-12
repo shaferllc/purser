@@ -150,31 +150,70 @@ final class Library {
 
     private func performInstall(_ app: CatalogApp) async {
         let slug = app.slug
-        let destination = preferences.installLocation.url
-        let client = client
+        var target = app
+        var attempt = 0
 
-        do {
-            let url = try await client.resolveDownload(for: app)
+        while true {
+            attempt += 1
 
-            let installedApp = try await Installer.install(
-                app,
-                from: url,
-                into: destination,
-                progress: { [weak self] stage in
-                    Task { @MainActor in self?.stages[slug] = stage }
+            let destination = Installer.destination(
+                updating: installedVersion(of: target),
+                fallback: preferences.installLocation.url
+            )
+
+            do {
+                let url = try await client.resolveDownload(for: target)
+
+                let outcome = try await Installer.install(
+                    target,
+                    from: url,
+                    into: destination,
+                    progress: { [weak self] stage in
+                        Task { @MainActor in self?.stages[slug] = stage }
+                    }
+                )
+
+                installed[outcome.app.bundleID] = outcome.app
+
+                if let warning = outcome.warning {
+                    alert = AlertMessage(title: "Installed \(app.name)", message: warning)
                 }
-            )
+            } catch {
+                // Usually this just means a new release landed since the last
+                // sync, so the checksum we hold describes an artifact that has
+                // been replaced. Re-sync once and try the new one before
+                // putting an error in front of anyone.
+                if attempt == 1, isStaleCatalog(error) {
+                    await refresh()
 
-            installed[installedApp.bundleID] = installedApp
-        } catch {
-            alert = AlertMessage(
-                title: "Couldn't install \(app.name)",
-                message: error.localizedDescription
-            )
+                    if let fresh = catalog.apps.first(where: { $0.slug == slug }),
+                       fresh.latestRelease != target.latestRelease
+                    {
+                        target = fresh
+                        continue
+                    }
+                }
+
+                alert = AlertMessage(
+                    title: "Couldn't install \(app.name)",
+                    message: error.localizedDescription
+                )
+            }
+
+            break
         }
 
         stages[slug] = nil
         rescanInstalled()
+    }
+
+    /// Failures that a fresh catalog would plausibly fix: the artifact didn't
+    /// match the checksum we were given, or the release we asked for is gone.
+    private func isStaleCatalog(_ error: Error) -> Bool {
+        if case .checksumMismatch = error as? InstallError { return true }
+        if case let .http(status, _) = error as? ClientError, status == 404 { return true }
+
+        return false
     }
 
     // MARK: - Removing

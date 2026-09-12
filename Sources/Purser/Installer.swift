@@ -26,12 +26,26 @@ enum InstallStage: Sendable, Equatable {
     }
 }
 
+/// What `codesign` makes of a downloaded bundle.
+enum SignatureState: Equatable {
+    /// Signed, and the seal is intact.
+    case valid
+    /// Never properly signed — the executable carries the linker's ad-hoc
+    /// signature but the bundle has no sealed resources. A build that skipped
+    /// `codesign`, not a bundle anyone tampered with.
+    case unsigned
+    /// Signed, but the seal is broken. Somebody or something changed the
+    /// bundle after it was signed.
+    case broken(String)
+}
+
 enum InstallError: LocalizedError {
     case checksumMismatch(expected: String, actual: String)
     case unpackFailed(String)
     case noAppBundle
     case wrongBundleID(expected: String, found: String)
     case signatureInvalid(String)
+    case unsignedAndUnverified(String)
     case destinationNotWritable(URL)
     case moveFailed(String)
 
@@ -46,13 +60,22 @@ enum InstallError: LocalizedError {
         case let .wrongBundleID(expected, found):
             "The download identifies itself as \(found), not \(expected). It was discarded."
         case let .signatureInvalid(detail):
-            "The app's code signature didn't check out. \(detail)"
+            "The app's code signature is broken, which means the bundle was changed after it was signed. It was discarded.\n\n\(detail)"
+        case let .unsignedAndUnverified(name):
+            "\(name) isn't code signed, and its release publishes no checksum — there's nothing to check it against, so it wasn't installed."
         case let .destinationNotWritable(url):
             "Can't write to \(url.path)."
         case let .moveFailed(detail):
             "Couldn't move the app into place. \(detail)"
         }
     }
+}
+
+/// The result of an install: what landed, and anything the user should know
+/// about it that wasn't bad enough to stop.
+struct InstallOutcome: Sendable {
+    var app: InstalledApp
+    var warning: String?
 }
 
 /// Downloads an app, checks it is what the catalog said it was, and swaps it
@@ -70,12 +93,14 @@ enum Installer {
         from url: URL,
         into destinationDirectory: URL,
         progress: @escaping @Sendable (InstallStage) -> Void
-    ) async throws -> InstalledApp {
+    ) async throws -> InstallOutcome {
         let scratch = try scratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
         progress(.downloading(0))
         let archive = try await download(url, into: scratch, progress: progress)
+
+        var checksumVerified = false
 
         if let expected = app.latestRelease?.sha256, !expected.isEmpty {
             progress(.verifying)
@@ -84,6 +109,8 @@ enum Installer {
             guard actual.caseInsensitiveCompare(expected) == .orderedSame else {
                 throw InstallError.checksumMismatch(expected: expected, actual: actual)
             }
+
+            checksumVerified = true
         }
 
         progress(.expanding)
@@ -99,11 +126,46 @@ enum Installer {
             }
         }
 
-        try verifySignature(of: bundle)
+        // A broken seal means the bundle changed after signing, and that's
+        // always fatal. A bundle that was never signed is a packaging mistake
+        // rather than an attack — install it only when the checksum already
+        // proved it is byte-for-byte what the catalog published, and say so.
+        var warning: String?
+
+        switch signatureState(of: bundle) {
+        case .valid:
+            break
+        case let .broken(detail):
+            throw InstallError.signatureInvalid(detail)
+        case .unsigned:
+            guard checksumVerified else { throw InstallError.unsignedAndUnverified(app.name) }
+
+            warning = "\(app.name) isn't code signed — its build skipped that step. "
+                + "The download matched the checksum the catalog published, so it is the right file, "
+                + "but macOS can't vouch for it."
+        }
 
         progress(.installing)
 
-        return try place(bundle, named: app.name, into: destinationDirectory, bundleID: app.bundleID)
+        let installed = try place(bundle, named: app.name, into: destinationDirectory, bundleID: app.bundleID)
+
+        // A release whose bundle carries a different version than the catalog
+        // advertises would otherwise show up as an update that never completes:
+        // we install it, rescan, still read the old version, and offer it again.
+        if let expected = app.latestRelease?.version,
+           Version.compare(installed.version, expected) != .orderedSame
+        {
+            warning = [
+                warning,
+                "\(app.name) installed, but the bundle reports version \(installed.version) while the "
+                    + "catalog offers \(expected). The release is mis-stamped, so it will keep appearing "
+                    + "under Updates until it's rebuilt with the right version.",
+            ]
+            .compactMap { $0 }
+            .joined(separator: "\n\n")
+        }
+
+        return InstallOutcome(app: installed, warning: warning)
     }
 
     // MARK: - Uninstall
@@ -155,6 +217,20 @@ enum Installer {
         if FileManager.default.isWritableFile(atPath: system.path) { return system }
 
         return userApplications()
+    }
+
+    /// Where an update should land. An app already on this Mac gets replaced
+    /// where it actually lives — installing an update into /Applications while
+    /// the old copy sits on the Desktop would leave two of them, and the older
+    /// one is what LaunchServices would keep opening.
+    static func destination(updating installed: InstalledApp?, fallback: URL) -> URL {
+        guard let installed else { return fallback }
+
+        let current = installed.url.deletingLastPathComponent()
+
+        guard FileManager.default.isWritableFile(atPath: current.path) else { return fallback }
+
+        return current
     }
 
     static func userApplications() -> URL {
@@ -274,11 +350,24 @@ enum Installer {
     }
 
     /// These apps are ad-hoc or self-signed rather than Developer ID signed, so
-    /// this checks the signature is intact — not that Apple vouches for it.
-    private static func verifySignature(of bundle: URL) throws {
-        let result = Shell.run("/usr/bin/codesign", ["--verify", "--strict", bundle.path])
+    /// this asks whether the signature is intact — not whether Apple vouches
+    /// for it.
+    static func signatureState(of bundle: URL) -> SignatureState {
+        let verify = Shell.run("/usr/bin/codesign", ["--verify", "--strict", bundle.path])
 
-        guard result.succeeded else { throw InstallError.signatureInvalid(result.output) }
+        if verify.succeeded { return .valid }
+
+        // Nothing was signed at all.
+        if verify.output.contains("not signed at all") { return .unsigned }
+
+        // Or the executable carries a signature but the bundle has no sealed
+        // resources — what you get when a build's `codesign` step failed and
+        // the error was swallowed. There was never a seal here to break.
+        let display = Shell.run("/usr/bin/codesign", ["-dv", bundle.path])
+
+        if display.output.contains("Sealed Resources=none") { return .unsigned }
+
+        return .broken(verify.output)
     }
 
     private static func place(

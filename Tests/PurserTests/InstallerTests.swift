@@ -18,6 +18,46 @@ final class InstallerTests: XCTestCase {
         }
     }
 
+    /// Regression: an app installed somewhere other than /Applications — the
+    /// Desktop, say — was updated into /Applications instead, leaving a stale
+    /// duplicate that LaunchServices would keep opening.
+    func testAnUpdateReplacesTheCopyThatIsAlreadyThere() {
+        let desktop = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop")
+        let installed = InstalledApp(
+            bundleID: "com.spyglass.desktop",
+            url: desktop.appendingPathComponent("Spyglass.app"),
+            version: "0.1.0",
+            build: "1",
+            name: "Spyglass"
+        )
+
+        let destination = Installer.destination(
+            updating: installed,
+            fallback: URL(fileURLWithPath: "/Applications")
+        )
+
+        XCTAssertEqual(destination.standardizedFileURL, desktop.standardizedFileURL)
+    }
+
+    func testAFreshInstallUsesTheConfiguredLocation() {
+        let fallback = URL(fileURLWithPath: "/Applications")
+
+        XCTAssertEqual(Installer.destination(updating: nil, fallback: fallback), fallback)
+    }
+
+    func testAnUpdateFallsBackWhenTheCurrentLocationIsReadOnly() {
+        let installed = InstalledApp(
+            bundleID: "com.apple.Safari",
+            url: URL(fileURLWithPath: "/System/Applications/Safari.app"),
+            version: "1.0",
+            build: "1",
+            name: "Safari"
+        )
+        let fallback = Installer.userApplications()
+
+        XCTAssertEqual(Installer.destination(updating: installed, fallback: fallback), fallback)
+    }
+
     func testDefaultDestinationIsAnApplicationsFolder() {
         XCTAssertTrue(Installer.defaultDestination().lastPathComponent == "Applications")
     }

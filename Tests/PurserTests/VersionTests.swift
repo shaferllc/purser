@@ -24,6 +24,20 @@ final class VersionTests: XCTestCase {
         XCTAssertTrue(Version.isNewer("1.3-beta", than: "1.2"))
     }
 
+    /// The Glade 1.0.0 case: the release is tagged 1.0.0 but the bundle inside
+    /// still says 0.1, so an install can never satisfy the update check. The
+    /// comparison has to see them as different for that to be reported.
+    func testAMisStampedReleaseDoesNotLookSatisfied() {
+        XCTAssertNotEqual(Version.compare("0.1", "1.0.0"), .orderedSame)
+        XCTAssertTrue(Version.isNewer("1.0.0", than: "0.1"))
+    }
+
+    func testAReleaseThatMatchesIsNotFlagged() {
+        XCTAssertEqual(Version.compare("0.2.0", "0.2.0"), .orderedSame)
+        // Trailing zeros are the same version, not a mis-stamp.
+        XCTAssertEqual(Version.compare("0.2", "0.2.0"), .orderedSame)
+    }
+
     func testGarbageNeverLooksNewer() {
         XCTAssertFalse(Version.isNewer("", than: "0.1"))
         XCTAssertFalse(Version.isNewer("unknown", than: "0.1"))
