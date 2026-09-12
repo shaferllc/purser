@@ -101,6 +101,10 @@ struct AppDetailView: View {
         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
             row("Developer", app.developer)
 
+            if library.isUnlocked(app) {
+                row("Licence", "Unlocked by your membership")
+            }
+
             if let installed = library.installedVersion(of: app) {
                 row("Installed", installed.version)
                 row("Location", installed.url.path)

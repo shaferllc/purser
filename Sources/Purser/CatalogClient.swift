@@ -79,6 +79,21 @@ struct CatalogClient: Sendable {
         return try JSONDecoder().decode(Payload.self, from: data).account
     }
 
+    /// The licence keys this account should hold right now. Chandlery reissues
+    /// membership keys on the way through, so calling this is what keeps them alive.
+    func licenses() async throws -> [IssuedLicense] {
+        guard token != nil else { throw ClientError.notSignedIn }
+
+        let request = try authorized(URLRequest(url: endpoint("licenses")))
+        let (data, response) = try await session.data(for: request)
+
+        try check(response, data)
+
+        struct Payload: Decodable { let licenses: [IssuedLicense] }
+
+        return try JSONDecoder().decode(Payload.self, from: data).licenses
+    }
+
     func signOut() async throws {
         guard token != nil else { return }
 

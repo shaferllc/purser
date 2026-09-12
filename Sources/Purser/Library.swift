@@ -98,9 +98,28 @@ final class Library {
 
         if isSignedIn {
             account = try? await client.account()
+            licenses = (try? await client.licenses()) ?? licenses
         }
 
         rescanInstalled()
+        handOffLicenses()
+    }
+
+    // MARK: - Licences
+
+    /// Keys Chandlery issued this account — what lets a membership unlock apps.
+    var licenses: [IssuedLicense] = []
+    private(set) var unlockedProducts: Set<String> = []
+
+    func isUnlocked(_ app: CatalogApp) -> Bool { unlockedProducts.contains(app.slug) }
+
+    /// product (the app's slug) → bundle identifier, for the apps on this Mac.
+    private var installedBundleIDs: [String: String] {
+        Dictionary(uniqueKeysWithValues: installedApps.compactMap { app in app.bundleID.map { (app.slug, $0) } })
+    }
+
+    private func handOffLicenses() {
+        unlockedProducts = LicenceHandoff.apply(licenses, bundleIDs: installedBundleIDs)
     }
 
     func rescanInstalled() {
@@ -130,6 +149,9 @@ final class Library {
         try? await client.signOut()
         Keychain.remove("deviceToken")
         account = nil
+        LicenceHandoff.revoke(bundleIDs: installedBundleIDs)
+        licenses = []
+        unlockedProducts = []
     }
 
     // MARK: - Installing
@@ -174,6 +196,7 @@ final class Library {
                 )
 
                 installed[outcome.app.bundleID] = outcome.app
+                handOffLicenses()
 
                 if let warning = outcome.warning {
                     alert = AlertMessage(title: "Installed \(app.name)", message: warning)
