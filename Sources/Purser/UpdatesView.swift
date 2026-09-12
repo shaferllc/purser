@@ -18,8 +18,13 @@ struct UpdatesView: View {
                     Spacer()
 
                     if !apps.isEmpty {
-                        Button("Update All") { library.updateAll() }
-                            .buttonStyle(.borderedProminent)
+                        Button {
+                            library.updateAll()
+                        } label: {
+                            Label("Update All", systemImage: "arrow.down.circle.fill")
+                        }
+                        .primaryActionStyle()
+                        .controlSize(.large)
                     }
                 }
 
@@ -89,9 +94,8 @@ private struct UpdateRow: View {
             InstallButton(app: app)
             AppActionsMenu(app: app)
         }
-        .padding(14)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator, lineWidth: 0.5))
+        .padding(16)
+        .cardSurface(cornerRadius: 16)
         .contextMenu { AppContextMenu(app: app) }
     }
 }

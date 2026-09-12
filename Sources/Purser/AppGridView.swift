@@ -52,7 +52,8 @@ struct AppCardView: View {
         // a Button would swallow them.
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                AppIconView(app: app, size: 48)
+                AppIconView(app: app, size: 56)
+                    .shadow(color: app.gradientColors[1].opacity(0.3), radius: 8, y: 4)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -101,9 +102,8 @@ struct AppCardView: View {
                 AppActionsMenu(app: app)
             }
         }
-        .padding(14)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.separator, lineWidth: 0.5))
+        .padding(16)
+        .cardSurface(cornerRadius: 18)
         .contextMenu { AppContextMenu(app: app) }
     }
 }

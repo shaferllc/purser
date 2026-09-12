@@ -56,12 +56,15 @@ struct AppDetailView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            AppIconView(app: app, size: 72)
+        HStack(alignment: .top, spacing: 18) {
+            AppIconView(app: app, size: 88)
+                .shadow(color: .black.opacity(0.3), radius: 14, y: 8)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(app.name).font(.title2.bold())
-                Text(app.tagline).font(.callout).foregroundStyle(.secondary)
+                Text(app.name)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text(app.tagline).font(.callout).foregroundStyle(.white.opacity(0.85))
 
                 HStack(spacing: 10) {
                     InstallButton(app: app)
@@ -81,11 +84,17 @@ struct AppDetailView: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.white.opacity(0.7))
             }
             .buttonStyle(.plain)
         }
-        .padding(20)
+        .padding(24)
+        .background {
+            ZStack {
+                LinearGradient(colors: app.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+                RadialGradient(colors: [.white.opacity(0.25), .clear], center: .topTrailing, startRadius: 10, endRadius: 420)
+            }
+        }
     }
 
     private var details: some View {

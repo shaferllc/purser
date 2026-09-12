@@ -111,12 +111,7 @@ struct RootView: View {
     private var content: some View {
         switch section {
         case .discover:
-            AppGridView(
-                title: "Discover",
-                subtitle: "\(library.apps.count) apps, one membership.",
-                apps: filtered(library.apps),
-                selection: $selection
-            )
+            DiscoverView(apps: filtered(library.apps), selection: $selection)
 
         case .installed:
             AppGridView(

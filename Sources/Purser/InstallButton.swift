@@ -6,6 +6,7 @@ struct InstallButton: View {
     @Environment(Library.self) private var library
 
     var app: CatalogApp
+    var large = false
 
     var body: some View {
         if let stage = library.stage(for: app) {
@@ -24,16 +25,16 @@ struct InstallButton: View {
             }
         } else if library.hasUpdate(app) {
             Button("Update") { library.install(app) }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .primaryActionStyle()
+                .controlSize(large ? .large : .small)
         } else if library.installedVersion(of: app) != nil {
             Button("Open") { library.launch(app) }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .secondaryActionStyle()
+                .controlSize(large ? .large : .small)
         } else if app.isInstallable {
             Button("Install") { library.install(app) }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .primaryActionStyle()
+                .controlSize(large ? .large : .small)
         } else {
             Text("Coming soon")
                 .font(.caption)

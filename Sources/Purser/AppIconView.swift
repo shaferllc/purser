@@ -22,19 +22,8 @@ struct AppIconView: View {
     }
 
     private var gradientIcon: some View {
-        let hues = app.iconHues.count >= 2 ? app.iconHues : [210, 260]
-
-        return RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color(hue: Double(hues[0]) / 360, saturation: 0.62, brightness: 0.78),
-                        Color(hue: Double(hues[1]) / 360, saturation: 0.70, brightness: 0.55),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+        RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
+            .fill(LinearGradient(colors: app.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing))
             .overlay {
                 Text(initials)
                     .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
